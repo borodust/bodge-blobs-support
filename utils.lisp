@@ -15,12 +15,17 @@
     (pushnew lib-dir cffi:*foreign-library-directories* :test #'equal)))
 
 
-(defun register-foreign-libraries (&rest libraries)
-  (setf *libraries* (nconc *libraries* libraries)))
+(defmacro register-foreign-libraries (os &rest libraries)
+  (setf *libraries* (nconc *libraries* libraries))
+  `(progn
+     ,@(loop for lib in libraries
+          collect `(cffi:define-foreign-library ,(make-symbol lib)
+                     (,os ,lib)))))
 
 
 (defun load-foreign-libraries ()
   (let ((search-directories (cffi::parse-directories cffi:*foreign-library-directories*)))
     (dolist (library-name *libraries*)
       (let ((library-path (cffi::find-file library-name search-directories)))
-        (cffi:load-foreign-library library-path)))))
+        (when library-path
+          (cffi:load-foreign-library library-path))))))
