@@ -15,9 +15,13 @@
     (pushnew lib-dir cffi:*foreign-library-directories* :test #'equal)))
 
 
+(defun %register-library-names (&rest libraries)
+  (setf *libraries* (nconc *libraries* libraries)))
+
+
 (defmacro register-foreign-libraries (os &rest libraries)
-  (setf *libraries* (nconc *libraries* libraries))
   `(progn
+     (%register-library-names ,@libraries)
      ,@(loop for lib in libraries
           collect `(cffi:define-foreign-library ,(make-symbol lib)
                      (,os ,lib)))))
