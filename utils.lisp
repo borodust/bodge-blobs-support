@@ -2,6 +2,7 @@
   (:use :cl)
   (:export register-library-directory
            register-foreign-libraries
+           list-registered-libraries
            load-foreign-libraries))
 (cl:in-package :bodge-blobs-support)
 
@@ -27,9 +28,14 @@
                      (,os ,lib)))))
 
 
-(defun load-foreign-libraries ()
+(defun list-registered-libraries ()
   (let ((search-directories (cffi::parse-directories cffi:*foreign-library-directories*)))
-    (dolist (library-name *libraries*)
-      (let ((library-path (cffi::find-file library-name search-directories)))
-        (when library-path
-          (cffi:load-foreign-library library-path))))))
+    (loop for library-name in *libraries*
+       as library-path = (cffi::find-file library-name search-directories)
+       when library-path
+       collect library-path)))
+
+
+(defun load-foreign-libraries ()
+  (dolist (library-path (list-registered-libraries))
+    (cffi:load-foreign-library library-path)))
