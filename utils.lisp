@@ -4,6 +4,8 @@
            register-foreign-libraries
            list-registered-libraries
            load-foreign-libraries))
+(cl:defpackage :bodge-blobs-support.library
+  (:use))
 (cl:in-package :bodge-blobs-support)
 
 
@@ -16,16 +18,19 @@
     (pushnew lib-dir cffi:*foreign-library-directories* :test #'equal)))
 
 
-(defun %register-library-names (&rest libraries)
+(defun %register-library-names (libraries)
   (setf *libraries* (nconc *libraries* libraries)))
 
 
 (defmacro register-foreign-libraries (os &rest libraries)
-  `(progn
-     (%register-library-names ,@libraries)
-     ,@(loop for lib in libraries
-          collect `(cffi:define-foreign-library ,(make-symbol lib)
-                     (,os ,lib)))))
+  (let ((lib-names (loop for lib in libraries
+                      collect (make-symbol lib))))
+    `(progn
+       (%register-library-names '(,@lib-names))
+       ,@(loop for lib in lib-names
+            collect `(cffi:define-foreign-library
+                         ,lib
+                         (,os ,(symbol-name lib)))))))
 
 
 (defun list-registered-libraries ()
@@ -37,5 +42,5 @@
 
 
 (defun load-foreign-libraries ()
-  (dolist (library-path (list-registered-libraries))
-    (cffi:load-foreign-library library-path)))
+  (dolist (library *libraries*)
+    (cffi:load-foreign-library library)))
