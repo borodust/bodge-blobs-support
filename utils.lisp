@@ -47,7 +47,8 @@
 
 (defun load-foreign-libraries ()
   (dolist (library *libraries*)
-    (cffi:load-foreign-library library)))
+    (unless (cffi:foreign-library-loaded-p library)
+      (cffi:load-foreign-library library))))
 
 
 (defun close-foreign-libraries ()
