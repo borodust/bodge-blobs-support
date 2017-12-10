@@ -2,7 +2,7 @@
   (:use :cl)
   (:export register-library-directory
            register-library-system-directory
-           register-foreign-libraries
+           define-foreign-library-collection
            list-registered-libraries
            load-foreign-libraries
            close-foreign-libraries))
@@ -23,18 +23,23 @@
 
 
 (defun %register-library-names (libraries)
-  (setf *libraries* (nconc *libraries* libraries)))
+  (flet ((already-exists (el)
+           (member (symbol-name el) *libraries* :test #'equal :key #'symbol-name)))
+    (setf *libraries* (nconc *libraries* (remove-if #'already-exists libraries)))))
 
 
-(defmacro register-foreign-libraries (os &rest libraries)
+(defmacro define-foreign-library-collection (os system-library-directory &rest libraries)
   (let ((lib-names (loop for lib in libraries
                       collect (make-symbol lib))))
-    `(progn
-       (%register-library-names '(,@lib-names))
-       ,@(loop for lib in lib-names
-            collect `(cffi:define-foreign-library
-                         ,lib
-                         (,os ,(symbol-name lib)))))))
+    (destructuring-bind (system &optional (path "lib/"))
+        (alexandria:ensure-list system-library-directory)
+      `(progn
+         (register-library-system-directory ,system ,path)
+         (%register-library-names '(,@lib-names))
+         ,@(loop for lib in lib-names
+              collect `(cffi:define-foreign-library
+                           ,lib
+                         (,os ,(symbol-name lib))))))))
 
 
 (defun list-registered-libraries ()
