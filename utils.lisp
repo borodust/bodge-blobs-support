@@ -74,7 +74,7 @@
   (load-foreign-libraries))
 
 
-(defmacro define-blob-system (name libraries &body body &key)
+(defmacro define-blob-system (name libraries &body body &key license author description)
   (declare (ignore body))
   (flet ((subsystem-name (lib-name features)
            (conc-symbols "" lib-name '/ (apply #'conc-symbols '- features)))
@@ -95,5 +95,8 @@
       `(progn
          ,@systems
          (asdf:defsystem ,name
+           :description ,description
+           :author ,author
+           :license ,license
            :depends-on (bodge-blobs-support ,@dependencies)
            :perform (asdf:load-op :before (op comp) (autoload)))))))
