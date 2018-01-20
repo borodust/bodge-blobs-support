@@ -4,6 +4,7 @@
   :author "Pavel Korolev"
   :mailto "dev@borodust.org"
   :license "The Unlicense"
-  :depends-on (cffi)
+  :defsystem-depends-on (trivial-features)
+  :depends-on (alexandria cffi)
   :serial t
   :components ((:file "utils")))

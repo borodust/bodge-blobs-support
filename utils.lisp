@@ -5,7 +5,8 @@
            define-foreign-library-collection
            list-registered-libraries
            load-foreign-libraries
-           close-foreign-libraries))
+           close-foreign-libraries
+           define-blob-system))
 (cl:in-package :bodge-blobs-support)
 
 
@@ -34,11 +35,10 @@
     (destructuring-bind (system &optional (path "lib/"))
         (alexandria:ensure-list system-library-directory)
       `(progn
-         (register-library-system-directory ,system ,path)
+         (register-library-system-directory ',system ,path)
          (%register-library-names '(,@lib-names))
          ,@(loop for lib in lib-names
-              collect `(cffi:define-foreign-library
-                           ,lib
+              collect `(cffi:define-foreign-library ,lib
                          (,os ,(symbol-name lib))))))))
 
 
@@ -59,3 +59,41 @@
 (defun close-foreign-libraries ()
   (dolist (library (reverse *libraries*))
     (cffi:close-foreign-library library)))
+
+
+(defun conc-symbols (separator &rest symbols)
+  (apply #'alexandria:symbolicate
+         (loop for (symbol . rest) on (alexandria:flatten symbols)
+               if rest
+                 append (list symbol separator)
+               else
+                 append (list symbol))))
+
+
+(defun autoload ()
+  (load-foreign-libraries))
+
+
+(defmacro define-blob-system (name libraries &body body &key)
+  (declare (ignore body))
+  (flet ((subsystem-name (lib-name features)
+           (conc-symbols "" lib-name '/ (apply #'conc-symbols '- features)))
+         (feature-test (features)
+           (append (list :and) (alexandria:ensure-list features))))
+    (let ((dependencies (loop for (feature lib-name &optional path) in libraries
+                              collect `(:feature ,(feature-test feature)
+                                                 ,(subsystem-name name feature))))
+          (systems (loop for lib-def in libraries
+                         collect (destructuring-bind (feature lib-name &optional (path "./")) lib-def
+                                   `(asdf:defsystem ,(subsystem-name name feature)
+                                      :depends-on (bodge-blobs-support)
+                                      :perform (asdf:load-op :after (op comp)
+                                                             (define-foreign-library-collection
+                                                                 ,(feature-test feature)
+                                                                 (,(subsystem-name name feature) ,path)
+                                                               ,lib-name)))))))
+      `(progn
+         ,@systems
+         (asdf:defsystem ,name
+           :depends-on (bodge-blobs-support ,@dependencies)
+           :perform (asdf:load-op :before (op comp) (autoload)))))))
