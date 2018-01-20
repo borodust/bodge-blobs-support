@@ -2,15 +2,44 @@
   (:use :cl)
   (:export register-library-directory
            register-library-system-directory
-           define-foreign-library-collection
            list-registered-libraries
            load-foreign-libraries
            close-foreign-libraries
-           define-blob-system))
+           bodge-blob-system))
 (cl:in-package :bodge-blobs-support)
 
 
 (defvar *libraries* nil)
+
+
+(defclass library ()
+  ((name :initarg :name)
+   (handle :initarg :handle)))
+
+
+(defun load-library (lib)
+  (with-slots (handle) lib
+    (cffi:load-foreign-library (cffi:foreign-library-name handle))))
+
+
+(defun close-library (lib)
+  (with-slots (handle) lib
+    (cffi:close-foreign-library handle)))
+
+
+(defun library-loaded-p (lib)
+  (with-slots (handle) lib
+    (cffi:foreign-library-loaded-p handle)))
+
+
+(defun library-id (lib)
+  (with-slots (handle) lib
+    (cffi:foreign-library-name handle)))
+
+
+(defun library-name (lib)
+  (with-slots (name) lib
+    name))
 
 
 (defun register-library-directory (directory)
@@ -22,43 +51,32 @@
          (lib-dir (merge-pathnames subdirectory sys-dir)))
     (register-library-directory lib-dir)))
 
-
-(defun %register-library-names (libraries)
-  (flet ((already-exists (el)
-           (member (symbol-name el) *libraries* :test #'equal :key #'symbol-name)))
-    (setf *libraries* (nconc *libraries* (remove-if #'already-exists libraries)))))
+(defun library-registered-p (name)
+  (member name *libraries* :test #'equal :key #'library-name))
 
 
-(defmacro define-foreign-library-collection (os system-library-directory &rest libraries)
-  (let ((lib-names (loop for lib in libraries
-                      collect (make-symbol lib))))
-    (destructuring-bind (system &optional (path "lib/"))
-        (alexandria:ensure-list system-library-directory)
-      `(progn
-         (register-library-system-directory ',system ,path)
-         (%register-library-names '(,@lib-names))
-         ,@(loop for lib in lib-names
-              collect `(cffi:define-foreign-library ,lib
-                         (,os ,(symbol-name lib))))))))
+(defun %register-libraries (&rest libraries)
+  (alexandria:nconcf *libraries* libraries))
 
 
 (defun list-registered-libraries ()
   (let ((search-directories (cffi::parse-directories cffi:*foreign-library-directories*)))
-    (loop for library-name in *libraries*
-       as library-path = (cffi::find-file (symbol-name library-name) search-directories)
+    (loop for library-name in (mapcar #'library-name *libraries* )
+       as library-path = (cffi::find-file library-name search-directories)
        when library-path
        collect library-path)))
 
 
 (defun load-foreign-libraries ()
   (dolist (library *libraries*)
-    (unless (cffi:foreign-library-loaded-p library)
-      (cffi:load-foreign-library library))))
+    (unless (library-loaded-p library)
+      (load-library library))))
 
 
 (defun close-foreign-libraries ()
   (dolist (library (reverse *libraries*))
-    (cffi:close-foreign-library library)))
+    (when (library-loaded-p library)
+      (close-library library))))
 
 
 (defun conc-symbols (separator &rest symbols)
@@ -70,33 +88,25 @@
                  append (list symbol))))
 
 
-(defun autoload ()
-  (load-foreign-libraries))
+(defclass asdf/interface::bodge-blob-system (asdf:system)
+  ((libraries :initarg :libraries :initform nil)))
 
 
-(defmacro define-blob-system (name libraries &body body &key license author description)
-  (declare (ignore body))
-  (flet ((subsystem-name (lib-name features)
-           (conc-symbols "" lib-name '/ (apply #'conc-symbols '- features)))
-         (feature-test (features)
-           (append (list :and) (alexandria:ensure-list features))))
-    (let ((dependencies (loop for (feature lib-name &optional path) in libraries
-                              collect `(:feature ,(feature-test feature)
-                                                 ,(subsystem-name name feature))))
-          (systems (loop for lib-def in libraries
-                         collect (destructuring-bind (feature lib-name &optional (path "./")) lib-def
-                                   `(asdf:defsystem ,(subsystem-name name feature)
-                                      :depends-on (bodge-blobs-support)
-                                      :perform (asdf:load-op :after (op comp)
-                                                             (define-foreign-library-collection
-                                                                 ,(feature-test feature)
-                                                                 (,(subsystem-name name feature) ,path)
-                                                               ,lib-name)))))))
-      `(progn
-         ,@systems
-         (asdf:defsystem ,name
-           :description ,description
-           :author ,author
-           :license ,license
-           :depends-on (bodge-blobs-support ,@dependencies)
-           :perform (asdf:load-op :before (op comp) (autoload)))))))
+(defmethod reinitialize-instance :after ((this asdf/interface::bodge-blob-system) &key)
+  (with-slots (libraries) this
+    (labels ((feature-test-list (features)
+               `(:and ,@(alexandria:ensure-list features)))
+             (test-key (lib-def)
+               (feature-test-list (first lib-def))))
+      (alexandria:if-let ((library (find-if #'alexandria:featurep libraries :key #'test-key)))
+        (let* ((library-name (second library))
+               (library-search-path (third library))
+               (full-search-path (asdf:system-relative-pathname this library-search-path)))
+          (unless (library-registered-p library-name)
+            (register-library-directory full-search-path)
+            (%register-libraries
+             (make-instance 'library
+                            :name library-name
+                            :handle (cffi:load-foreign-library library-name
+                                                               :search-path full-search-path)))))
+        (error "No libraries found for current architecture")))))
