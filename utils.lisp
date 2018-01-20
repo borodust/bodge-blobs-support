@@ -98,15 +98,18 @@
                `(:and ,@(alexandria:ensure-list features)))
              (test-key (lib-def)
                (feature-test-list (first lib-def))))
-      (alexandria:if-let ((library (find-if #'alexandria:featurep libraries :key #'test-key)))
-        (let* ((library-name (second library))
-               (library-search-path (third library))
-               (full-search-path (asdf:system-relative-pathname this library-search-path)))
-          (unless (library-registered-p library-name)
-            (register-library-directory full-search-path)
-            (%register-libraries
-             (make-instance 'library
-                            :name library-name
-                            :handle (cffi:load-foreign-library library-name
-                                                               :search-path full-search-path)))))
+      (alexandria:if-let ((supported-libraries (remove-if (complement #'alexandria:featurep)
+                                                          libraries :key #'test-key)))
+        (loop for library in supported-libraries
+              do (let* ((library-name (second library))
+                        (library-search-path (third library))
+                        (full-search-path (asdf:system-relative-pathname this library-search-path)))
+                   (unless (library-registered-p library-name)
+                     (register-library-directory full-search-path)
+                     (%register-libraries
+                      (make-instance 'library
+                                     :name library-name
+                                     :handle (cffi:load-foreign-library
+                                              library-name
+                                              :search-path full-search-path))))))
         (error "No libraries found for current architecture")))))
