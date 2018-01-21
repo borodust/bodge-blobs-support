@@ -92,7 +92,7 @@
   ((libraries :initarg :libraries :initform nil)))
 
 
-(defmethod reinitialize-instance :after ((this asdf/interface::bodge-blob-system) &key)
+(defmethod asdf:perform :after ((operation asdf:load-op) (this asdf/interface::bodge-blob-system))
   (with-slots (libraries) this
     (labels ((feature-test-list (features)
                `(:and ,@(alexandria:ensure-list features)))
