@@ -5,6 +5,7 @@
            list-registered-libraries
            load-foreign-libraries
            close-foreign-libraries
+           link-system-foreign-libraries
            bodge-blob-system))
 (cl:in-package :bodge-blobs-support)
 
@@ -13,7 +14,8 @@
 
 
 (defclass library ()
-  ((name :initarg :name)
+  ((name :initarg :name :reader %name-of)
+   (system-name :initarg :system-name :reader %system-name-of)
    (handle :initarg :handle)))
 
 
@@ -51,12 +53,18 @@
          (lib-dir (merge-pathnames subdirectory sys-dir)))
     (register-library-directory lib-dir)))
 
+
 (defun library-registered-p (name)
   (member name *libraries* :test #'equal :key #'library-name))
 
 
 (defun %register-libraries (&rest libraries)
   (alexandria:nconcf *libraries* libraries))
+
+
+(defun find-library-absolute-path (library-name)
+  (let ((search-directories (cffi::parse-directories cffi:*foreign-library-directories*)))
+    (cffi::find-file library-name search-directories)))
 
 
 (defun list-registered-libraries ()
@@ -77,6 +85,23 @@
   (dolist (library (reverse *libraries*))
     (when (library-loaded-p library)
       (close-library library))))
+
+
+(defun link-foreign-library (name destination)
+  (unless (uiop:file-exists-p destination)
+    (uiop:run-program (format nil "ln -s '~A' '~A'"
+                              (find-library-absolute-path name)
+                              destination))))
+
+
+(defun link-system-foreign-libraries (system-name destination-directory)
+  (alexandria:when-let* ((system (asdf:find-system system-name))
+                         (component-name (asdf:component-name system)))
+    (loop for lib in *libraries*
+          when (equal component-name (%system-name-of lib))
+            do (link-foreign-library (%name-of lib) (format nil "~A/~A"
+                                                            destination-directory
+                                                            (%name-of lib))))))
 
 
 (defun conc-symbols (separator &rest symbols)
@@ -109,6 +134,7 @@
                      (%register-libraries
                       (make-instance 'library
                                      :name library-name
+                                     :system-name (asdf:component-name this)
                                      :handle (cffi:load-foreign-library
                                               library-name
                                               :search-path full-search-path))))))
