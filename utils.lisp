@@ -94,16 +94,6 @@
                               destination))))
 
 
-(defun link-system-foreign-libraries (system-name destination-directory)
-  (alexandria:when-let* ((system (asdf:find-system system-name))
-                         (component-name (asdf:component-name system)))
-    (loop for lib in *libraries*
-          when (equal component-name (%system-name-of lib))
-            do (link-foreign-library (%name-of lib) (format nil "~A/~A"
-                                                            destination-directory
-                                                            (%name-of lib))))))
-
-
 (defun conc-symbols (separator &rest symbols)
   (apply #'alexandria:symbolicate
          (loop for (symbol . rest) on (alexandria:flatten symbols)
@@ -139,3 +129,24 @@
                                               library-name
                                               :search-path full-search-path))))))
         (error "No libraries found for current architecture")))))
+
+
+(defun bodge-blob-system-p (system)
+  (values (subtypep (class-of system) 'asdf/interface::bodge-blob-system)))
+
+
+(defun link-system-foreign-libraries (system-name destination-directory)
+  (alexandria:when-let* ((system (asdf:find-system system-name))
+                         (component-name (asdf:component-name system)))
+    (let ((absolute-dest-dir (if (uiop:relative-pathname-p destination-directory)
+                                 (asdf:system-relative-pathname system-name destination-directory)
+                                 destination-directory)))
+      (loop for lib in *libraries*
+            when (equal component-name (%system-name-of lib))
+              do (link-foreign-library (%name-of lib) (format nil "~A/~A"
+                                                              absolute-dest-dir
+                                                              (%name-of lib))))
+      (loop for dependency-name in (asdf:system-depends-on system)
+            as dependency = (asdf:find-system dependency-name)
+            when (bodge-blob-system-p dependency)
+              do (link-system-foreign-libraries dependency-name absolute-dest-dir)))))
