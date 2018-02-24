@@ -88,10 +88,9 @@
 
 
 (defun link-foreign-library (name destination)
-  (unless (uiop:file-exists-p destination)
-    (uiop:run-program (format nil "ln -s '~A' '~A'"
-                              (find-library-absolute-path name)
-                              destination))))
+  (uiop:run-program (format nil "ln -fs '~A' '~A'"
+                            (find-library-absolute-path name)
+                            destination)))
 
 
 (defun conc-symbols (separator &rest symbols)
