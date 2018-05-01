@@ -124,9 +124,7 @@
                       (make-instance 'library
                                      :name library-name
                                      :system-name (asdf:component-name this)
-                                     :handle (cffi:load-foreign-library
-                                              library-name
-                                              :search-path full-search-path))))))
+                                     :handle (cffi:load-foreign-library library-name))))))
         (error "No libraries found for current architecture")))))
 
 
