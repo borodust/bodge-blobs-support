@@ -26,6 +26,15 @@
 
 (defun close-library (lib)
   (with-slots (handle) lib
+    #+ccl
+    (flet ((remove-library-eep (name eep)
+             (declare (ignore name))
+             (when (eq (cffi::foreign-library-handle handle) (ccl::eep.container eep))
+               (setf (ccl::eep.container eep) nil))))
+      ;; FIXME HAX: ccl caches SHLIB pointer in EEP while SHLIB caches initial name/soname
+      ;; so on reloading it will try to use this old cached SHLIB full path failing
+      ;; to find the lib on different systems
+      (maphash #'remove-library-eep (ccl::eeps)))
     (cffi:close-foreign-library handle)))
 
 
