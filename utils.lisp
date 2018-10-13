@@ -1,12 +1,13 @@
-(cl:defpackage :bodge-blobs-support
+(uiop:define-package :bodge-blobs-support
   (:use :cl)
-  (:export register-library-directory
-           register-library-system-directory
-           list-registered-libraries
-           load-foreign-libraries
-           close-foreign-libraries
-           link-system-foreign-libraries
-           bodge-blob-system))
+  (:export #:register-library-directory
+           #:register-library-system-directory
+           #:list-registered-libraries
+           #:load-foreign-libraries
+           #:close-foreign-libraries
+           #:link-system-foreign-libraries
+           #:bodge-blob-system
+           #:find-loaded-library-name))
 (cl:in-package :bodge-blobs-support)
 
 
@@ -16,7 +17,8 @@
 (defclass library ()
   ((name :initarg :name :reader %name-of)
    (system-name :initarg :system-name :reader %system-name-of)
-   (handle :initarg :handle)))
+   (handle :initarg :handle)
+   (nickname :initarg :nickname :initform nil :reader %nickname-of)))
 
 
 (defun load-library (lib)
@@ -124,21 +126,24 @@
       (alexandria:if-let ((supported-libraries (remove-if (complement #'alexandria:featurep)
                                                           libraries :key #'test-key)))
         (loop for library in supported-libraries
-              do (let* ((library-name (second library))
-                        (library-search-path (third library))
-                        (full-search-path (asdf:system-relative-pathname this library-search-path)))
-                   (unless (library-registered-p library-name)
-                     (register-library-directory full-search-path)
-                     (%register-libraries
-                      (make-instance 'library
-                                     :name library-name
-                                     :system-name (asdf:component-name this)
-                                     :handle (cffi:load-foreign-library library-name))))))
+              do (destructuring-bind (test library-name library-search-path
+                                      &key nickname &allow-other-keys)
+                     library
+                   (declare (ignore test))
+                   (let* ((full-search-path (asdf:system-relative-pathname this library-search-path)))
+                     (unless (library-registered-p library-name)
+                       (register-library-directory full-search-path)
+                       (%register-libraries
+                        (make-instance 'library
+                                       :name library-name
+                                       :system-name (asdf:component-name this)
+                                       :nickname nickname
+                                       :handle (cffi:load-foreign-library library-name)))))))
         (error "No libraries found for current architecture")))))
 
 
 (defun bodge-blob-system-p (system)
-  (values (subtypep (class-of system) 'asdf/interface::bodge-blob-system)))
+  (values (subtypep (class-of system ) 'asdf/interface::bodge-blob-system)))
 
 
 (defun link-system-foreign-libraries (system-name destination-directory)
@@ -156,3 +161,12 @@
             as dependency = (asdf:find-system dependency-name)
             when (bodge-blob-system-p dependency)
               do (link-system-foreign-libraries dependency-name absolute-dest-dir)))))
+
+
+(defun find-loaded-library-name (system-name library-nickname)
+  (alexandria:when-let* ((system (asdf:find-system system-name))
+                         (component-name (asdf:component-name system)))
+    (loop for library in *libraries*
+            thereis (and (equal (%system-name-of library) component-name)
+                         (equal (%nickname-of library) library-nickname)
+                         (%name-of library)))))
