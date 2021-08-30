@@ -23,7 +23,7 @@
 
 (defun load-library (lib)
   (with-slots (handle) lib
-    (cffi:load-foreign-library (cffi:foreign-library-name handle))))
+    (setf handle (cffi:load-foreign-library (cffi:foreign-library-name handle)))))
 
 
 (defun close-library (lib)
@@ -93,7 +93,7 @@
 
 
 (defun close-foreign-libraries ()
-  (dolist (library (reverse *libraries*))
+  (dolist (library *libraries*)
     (when (library-loaded-p library)
       (close-library library))))
 
