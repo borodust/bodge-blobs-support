@@ -6,7 +6,7 @@
            #:load-foreign-libraries
            #:close-foreign-libraries
            #:link-system-foreign-libraries
-           #:bodge-blob-system
+           #:bodge-blob-system-p
            #:find-loaded-library-name))
 (cl:in-package :bodge-blobs-support)
 
