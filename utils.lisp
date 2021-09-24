@@ -21,9 +21,16 @@
    (nickname :initarg :nickname :initform nil :reader %nickname-of)))
 
 
+(defun lookup-library (name)
+  (or (loop for path in cffi:*foreign-library-directories*
+            for libdir = (uiop:ensure-directory-pathname path)
+              thereis (uiop:probe-file* (merge-pathnames name libdir)))
+      name))
+
+
 (defun load-library (lib)
-  (with-slots (handle) lib
-    (setf handle (cffi:load-foreign-library (cffi:foreign-library-name handle)))))
+  (with-slots (name handle) lib
+    (setf handle (cffi:load-foreign-library (lookup-library name)))))
 
 
 (defun close-library (lib)
