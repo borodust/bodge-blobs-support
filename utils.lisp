@@ -17,7 +17,7 @@
 (defclass library ()
   ((name :initarg :name :reader %name-of)
    (system-name :initarg :system-name :reader %system-name-of)
-   (handle :initarg :handle)
+   (handle :initarg :handle :initform nil)
    (nickname :initarg :nickname :initform nil :reader %nickname-of)))
 
 
@@ -140,12 +140,12 @@
                    (let* ((full-search-path (asdf:system-relative-pathname this library-search-path)))
                      (unless (library-registered-p library-name)
                        (register-library-directory full-search-path)
-                       (%register-libraries
-                        (make-instance 'library
-                                       :name library-name
-                                       :system-name (asdf:component-name this)
-                                       :nickname nickname
-                                       :handle (cffi:load-foreign-library library-name)))))))
+                       (let ((lib (make-instance 'library
+                                                 :name library-name
+                                                 :system-name (asdf:component-name this)
+                                                 :nickname nickname)))
+                         (load-library lib)
+                         (%register-libraries lib))))))
         (error "No libraries found for current architecture")))))
 
 
