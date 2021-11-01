@@ -11,6 +11,11 @@
 (cl:in-package :bodge-blobs-support)
 
 
+(eval-when (:execute :load-toplevel :compile-toplevel)
+  (when (member :arm64 *features*)
+    (pushnew :aarch64 *features*)))
+
+
 (defvar *libraries* nil)
 
 
@@ -49,7 +54,8 @@
 
 (defun library-loaded-p (lib)
   (with-slots (handle) lib
-    (cffi:foreign-library-loaded-p handle)))
+    (when handle
+      (cffi:foreign-library-loaded-p handle))))
 
 
 (defun library-id (lib)
@@ -60,6 +66,11 @@
 (defun library-name (lib)
   (with-slots (name) lib
     name))
+
+
+(defun library-system (lib)
+  (with-slots (system-name) lib
+    system-name))
 
 
 (defun register-library-directory (directory)
@@ -121,11 +132,12 @@
 
 
 (defclass asdf/interface::bodge-blob-system (asdf:system)
-  ((libraries :initarg :libraries :initform nil)))
+  ((libraries :initarg :libraries :initform nil)
+   (preload :initarg :preload :initform t)))
 
 
 (defmethod asdf:perform :after ((operation asdf:load-op) (this asdf/interface::bodge-blob-system))
-  (with-slots (libraries) this
+  (with-slots (libraries preload) this
     (labels ((feature-test-list (features)
                `(:and ,@(alexandria:ensure-list features)))
              (test-key (lib-def)
@@ -144,7 +156,8 @@
                                                  :name library-name
                                                  :system-name (asdf:component-name this)
                                                  :nickname nickname)))
-                         (load-library lib)
+                         (when preload
+                           (load-library lib))
                          (%register-libraries lib))))))
         (error "No libraries found for current architecture")))))
 
