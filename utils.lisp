@@ -7,7 +7,11 @@
            #:close-foreign-libraries
            #:link-system-foreign-libraries
            #:bodge-blob-system-p
-           #:find-loaded-library-name))
+           #:find-loaded-library-name
+           #:find-system-libraries-by-features
+
+           #:library-descriptor-name
+           #:library-descriptor-search-path))
 (cl:in-package :bodge-blobs-support)
 
 
@@ -131,35 +135,69 @@
                  append (list symbol))))
 
 
+(defclass library-descriptor ()
+  ((name :initarg :name :reader library-descriptor-name)
+   (feature-expression :initarg :feature-expression :reader library-descriptor-feature-expression)
+   (search-path :initarg :search-path :reader library-descriptor-search-path)
+   (nickname :initarg :nickname :initform nil :reader library-descriptor-nickname)))
+
+
 (defclass asdf/interface::bodge-blob-system (asdf:system)
-  ((libraries :initarg :libraries :initform nil)
+  ((libraries :initform nil)
    (preload :initarg :preload :initform t)))
+
+
+(defmethod reinitialize-instance :after ((this asdf/interface::bodge-blob-system)
+                                         &key libraries)
+  (with-slots ((this-libraries libraries)) this
+    (setf
+     this-libraries
+     (loop for lib in libraries
+           collect (destructuring-bind (test library-name library-search-path
+                                        &key nickname &allow-other-keys)
+                       lib
+                     (make-instance 'library-descriptor
+                                    :name library-name
+                                    :feature-expression `(:and
+                                                          ,@(alexandria:ensure-list test))
+                                    :search-path (asdf:system-relative-pathname this
+                                                                                library-search-path)
+                                    :nickname nickname))))))
+
+
+(defgeneric find-system-libraries-by-features (bodge-blob-system &optional features)
+  (:method (bodge-blobs-system &optional (features *features*))
+    (alexandria:if-let (system (ignore-errors
+                                (asdf:find-system bodge-blobs-system)))
+      (find-system-libraries-by-features system features)
+      (call-next-method))))
+
+
+(defmethod find-system-libraries-by-features ((this asdf/interface::bodge-blob-system)
+                                              &optional (features *features*))
+  (with-slots (libraries) this
+    (labels ((featurep (feature-expression)
+               (uiop:featurep feature-expression features)))
+      (remove-if (complement #'featurep) libraries :key #'library-descriptor-feature-expression))))
 
 
 (defmethod asdf:perform :after ((operation asdf:load-op) (this asdf/interface::bodge-blob-system))
   (with-slots (libraries preload) this
-    (labels ((feature-test-list (features)
-               `(:and ,@(alexandria:ensure-list features)))
-             (test-key (lib-def)
-               (feature-test-list (first lib-def))))
-      (alexandria:if-let ((supported-libraries (remove-if (complement #'alexandria:featurep)
-                                                          libraries :key #'test-key)))
-        (loop for library in supported-libraries
-              do (destructuring-bind (test library-name library-search-path
-                                      &key nickname &allow-other-keys)
-                     library
-                   (declare (ignore test))
-                   (let* ((full-search-path (asdf:system-relative-pathname this library-search-path)))
-                     (unless (library-registered-p library-name)
-                       (register-library-directory full-search-path)
-                       (let ((lib (make-instance 'library
-                                                 :name library-name
-                                                 :system-name (asdf:component-name this)
-                                                 :nickname nickname)))
-                         (when preload
-                           (load-library lib))
-                         (%register-libraries lib))))))
-        (error "No libraries found for current architecture")))))
+    (alexandria:if-let ((supported-libraries (find-system-libraries-by-features this)))
+      (loop for library in supported-libraries
+            for library-name = (library-descriptor-name library)
+            for library-search-path = (library-descriptor-search-path library)
+            for library-nickname = (library-descriptor-nickname library)
+            do (unless (library-registered-p library-name)
+                 (register-library-directory library-search-path)
+                 (let ((lib (make-instance 'library
+                                           :name library-name
+                                           :system-name (asdf:component-name this)
+                                           :nickname library-nickname)))
+                   (when preload
+                     (load-library lib))
+                   (%register-libraries lib))))
+      (error "No libraries found for current architecture"))))
 
 
 (defun bodge-blob-system-p (system)
